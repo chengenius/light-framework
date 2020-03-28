@@ -8,9 +8,14 @@ class ComposerStaticInitf232bb4334a4b844e9d568c85834f7e7
 {
     public static $files = array (
         '253c157292f75eb38082b5acb06f3f01' => __DIR__ . '/..' . '/nikic/fast-route/src/functions.php',
+        '33197a0023ced5fbf8f861d1c4ca048d' => __DIR__ . '/..' . '/topthink/think-orm/src/config.php',
     );
 
     public static $prefixLengthsPsr4 = array (
+        't' => 
+        array (
+            'think\\' => 6,
+        ),
         'F' => 
         array (
             'FastRoute\\' => 10,
@@ -26,6 +31,10 @@ class ComposerStaticInitf232bb4334a4b844e9d568c85834f7e7
     );
 
     public static $prefixDirsPsr4 = array (
+        'think\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/topthink/think-orm/src',
+        ),
         'FastRoute\\' => 
         array (
             0 => __DIR__ . '/..' . '/nikic/fast-route/src',

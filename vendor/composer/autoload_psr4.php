@@ -6,6 +6,7 @@ $vendorDir = dirname(dirname(__FILE__));
 $baseDir = dirname($vendorDir);
 
 return array(
+    'think\\' => array($vendorDir . '/topthink/think-orm/src'),
     'FastRoute\\' => array($vendorDir . '/nikic/fast-route/src'),
     'Chengenius\\Request\\' => array($vendorDir . '/chengenius/request/src'),
     'App\\' => array($baseDir . '/app'),
