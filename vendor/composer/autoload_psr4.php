@@ -7,6 +7,8 @@ $baseDir = dirname($vendorDir);
 
 return array(
     'think\\' => array($vendorDir . '/topthink/think-orm/src'),
+    'Psr\\SimpleCache\\' => array($vendorDir . '/psr/simple-cache/src'),
+    'Psr\\Cache\\' => array($vendorDir . '/psr/cache/src'),
     'FastRoute\\' => array($vendorDir . '/nikic/fast-route/src'),
     'Chengenius\\Request\\' => array($vendorDir . '/chengenius/request/src'),
     'App\\' => array($baseDir . '/app'),

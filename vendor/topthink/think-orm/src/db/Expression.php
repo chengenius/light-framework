@@ -10,34 +10,40 @@
 // +----------------------------------------------------------------------
 declare (strict_types = 1);
 
-namespace think\model;
+namespace think\db;
 
-use think\Model;
-
-class Pivot extends Model
+class Expression
 {
-
-    /** @var Model */
-    public $parent;
-
-    protected $autoWriteTimestamp = false;
+    /**
+     * 查询表达式
+     *
+     * @var string
+     */
+    protected $value;
 
     /**
-     * 架构函数
-     * @access public
-     * @param  array    $data 数据
-     * @param  Model    $parent 上级模型
-     * @param  string   $table 中间数据表名
+     * 创建一个查询表达式
+     *
+     * @param  string  $value
+     * @return void
      */
-    public function __construct(array $data = [], $parent = null, string $table = '')
+    public function __construct(string $value)
     {
-        $this->parent = $parent;
-
-        if (is_null($this->name)) {
-            $this->name = $table;
-        }
-
-        parent::__construct($data);
+        $this->value = $value;
     }
 
+    /**
+     * 获取表达式
+     *
+     * @return string
+     */
+    public function getValue(): string
+    {
+        return $this->value;
+    }
+
+    public function __toString()
+    {
+        return (string) $this->value;
+    }
 }

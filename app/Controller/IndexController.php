@@ -3,6 +3,7 @@
 namespace App\Controller;
 
 use App\Controller;
+use App\Model\TestModel;
 
 
 class IndexController extends Controller
@@ -15,6 +16,12 @@ class IndexController extends Controller
     public function index()
     {
         $this->_view->display('index.html');
+    }
+
+    public function test()
+    {
+        $model = new TestModel('user');
+        echo '<pre>'; print_r($model->index());
     }
 
 }

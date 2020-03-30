@@ -1,9 +1,17 @@
 <?php
 require './vendor/autoload.php';
-require './config/config.php';
+require './route/routes.php';
+require './config/required_configs.php';
 
-$dispatcher = FastRoute\simpleDispatcher(function (FastRoute\RouteCollector $r) use ($route_conf){
-    App\Routes::getRoutes($r, $route_conf);
+foreach ($required_configs as $conf) {
+    $file = './config/' . $conf . '.php';
+    require "$file";
+}
+
+require './helper/functions.php';
+
+$dispatcher = FastRoute\simpleDispatcher(function (FastRoute\RouteCollector $r) use ($route){
+    App\Routes::getRoutes($r, $route);
 });
 
 $httpMethod = $_SERVER['REQUEST_METHOD'];

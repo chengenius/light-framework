@@ -21,8 +21,8 @@ use MongoDB\Driver\Exception\RuntimeException;
 use MongoDB\Driver\Query as MongoQuery;
 use MongoDB\Driver\ReadPreference;
 use MongoDB\Driver\WriteConcern;
-use think\Collection;
-use think\db\connector\Mongo as Connection;
+use think\Db;
+use think\db\connector\Mongo as MongoConnection;
 use think\db\Query;
 
 class Mongo extends Query
@@ -32,15 +32,16 @@ class Mongo extends Query
      * 架构函数
      * @access public
      */
-    public function __construct(Connection $connection = null)
+    public function __construct(MongoConnection $connection = null)
     {
         if (is_null($connection)) {
-            $this->connection = Connection::instance();
+            $this->connection = MongoConnection::instance();
         } else {
             $this->connection = $connection;
         }
 
         $this->prefix = $this->connection->getConfig('prefix');
+        $this->cache  = Db::getCacheHandler();
     }
 
     /**
@@ -50,12 +51,18 @@ class Mongo extends Query
      * @param string $logic 查询逻辑 and or xor
      * @return $this
      */
-    public function removeWhereField($field, $logic = 'and')
+    public function removeWhereField(string $field, string $logic = 'AND')
     {
         $logic = '$' . strtoupper($logic);
-        if (isset($this->options['where'][$logic][$field])) {
-            unset($this->options['where'][$logic][$field]);
+
+        if (isset($this->options['where'][$logic])) {
+            foreach ($this->options['where'][$logic] as $key => $val) {
+                if (is_array($val) && $val[0] == $field) {
+                    unset($this->options['where'][$logic][$key]);
+                }
+            }
         }
+
         return $this;
     }
 
@@ -161,7 +168,7 @@ class Mongo extends Query
      * @access public
      * @return integer
      */
-    public function count($field = null)
+    public function count(string $field = null)
     {
         $this->parseOptions();
 
@@ -175,15 +182,15 @@ class Mongo extends Query
      * @access public
      * @param string $aggregate 聚合指令
      * @param string $field     字段名
-     * @param bool   $force   强制转为数字类型
+     * @param bool   $force     强制转为数字类型
      * @return mixed
      */
-    public function aggregate($aggregate, $field, $force = false)
+    public function aggregate(string $aggregate, $field, bool $force = false)
     {
         $this->parseOptions();
 
-        $result = $this->cmd('aggregate', [$aggregate, $field]);
-        $value  = isset($result[0]['result'][0]['aggregate']) ? $result[0]['result'][0]['aggregate'] : 0;
+        $result = $this->cmd('aggregate', [strtolower($aggregate), $field]);
+        $value  = isset($result[0]['aggregate']) ? $result[0]['aggregate'] : 0;
 
         if ($force) {
             $value += 0;
@@ -193,109 +200,28 @@ class Mongo extends Query
     }
 
     /**
-     * MAX查询
-     * @access public
-     * @param string $field   字段名
-     * @param bool   $force   强制转为数字类型
-     * @return float
+     * 多聚合操作
+     *
+     * @param array $aggregate 聚合指令, 可以聚合多个参数, 如 ['sum' => 'field1', 'avg' => 'field2']
+     * @param array $groupBy 类似mysql里面的group字段, 可以传入多个字段, 如 ['field_a', 'field_b', 'field_c']
+     * @return array 查询结果
      */
-    public function max($field, $force = true)
+    public function multiAggregate($aggregate, $groupBy)
     {
-        return $this->aggregate('max', $field, $force);
-    }
+        $this->parseOptions();
 
-    /**
-     * MIN查询
-     * @access public
-     * @param string $field   字段名
-     * @param bool   $force   强制转为数字类型
-     * @return mixed
-     */
-    public function min($field, $force = true)
-    {
-        return $this->aggregate('min', $field, $force);
-    }
+        $result = $this->cmd('multiAggregate', [$aggregate, $groupBy]);
 
-    /**
-     * SUM查询
-     * @access public
-     * @param string $field   字段名
-     * @return float
-     */
-    public function sum($field)
-    {
-        return $this->aggregate('sum', $field);
-    }
-
-    /**
-     * AVG查询
-     * @access public
-     * @param string $field   字段名
-     * @return float
-     */
-    public function avg($field)
-    {
-        return $this->aggregate('avg', $field);
-    }
-
-    /**
-     * 字段值(延迟)增长
-     * @access public
-     * @param string    $field 字段名
-     * @param integer   $step 增长值
-     * @param integer   $lazyTime 延时时间(s)
-     * @return integer|true
-     * @throws Exception
-     */
-    public function setInc($field, $step = 1, $lazyTime = 0)
-    {
-        $condition = !empty($this->options['where']) ? $this->options['where'] : [];
-
-        if (empty($condition)) {
-            // 没有条件不做任何更新
-            throw new Exception('no data to update');
-        }
-
-        if ($lazyTime > 0) {
-            // 延迟写入
-            $guid = md5($this->getTable() . '_' . $field . '_' . serialize($condition));
-            $step = $this->lazyWrite($guid, $step, $lazyTime);
-            if (empty($step)) {
-                return true; // 等待下次写入
+        foreach ($result as &$row) {
+            if (isset($row['_id']) && !empty($row['_id'])) {
+                foreach ($row['_id'] as $k => $v) {
+                    $row[$k] = $v;
+                }
+                unset($row['_id']);
             }
         }
 
-        return $this->setField($field, ['$inc', $step]);
-    }
-
-    /**
-     * 字段值（延迟）减少
-     * @access public
-     * @param string    $field 字段名
-     * @param integer   $step 减少值
-     * @param integer   $lazyTime 延时时间(s)
-     * @return integer|true
-     * @throws Exception
-     */
-    public function setDec($field, $step = 1, $lazyTime = 0)
-    {
-        $condition = !empty($this->options['where']) ? $this->options['where'] : [];
-
-        if (empty($condition)) {
-            // 没有条件不做任何更新
-            throw new Exception('no data to update');
-        }
-
-        if ($lazyTime > 0) {
-            // 延迟写入
-            $guid = md5($this->getTable() . '_' . $field . '_' . serialize($condition));
-            $step = $this->lazyWrite($guid, -$step, $lazyTime);
-            if (empty($step)) {
-                return true; // 等待下次写入
-            }
-        }
-
-        return $this->setField($field, ['$inc', -1 * $step]);
+        return $result;
     }
 
     /**
@@ -305,86 +231,9 @@ class Mongo extends Query
      * @param integer      $step  增长值
      * @return $this
      */
-    public function inc($field, $step = 1)
+    public function inc(string $field, int $step = 1, string $op = 'INC')
     {
-        $fields = is_string($field) ? explode(',', $field) : $field;
-        foreach ($fields as $field) {
-            $this->data($field, ['$inc', $step]);
-        }
-        return $this;
-    }
-
-    /**
-     * 字段值减少
-     * @access public
-     * @param string|array $field 字段名
-     * @param integer      $step  减少值
-     * @return $this
-     */
-    public function dec($field, $step = 1)
-    {
-        $fields = is_string($field) ? explode(',', $field) : $field;
-        foreach ($fields as $field) {
-            $this->data($field, ['$inc', -1 * $step]);
-        }
-        return $this;
-    }
-
-    /**
-     * 分析查询表达式
-     * @access public
-     * @param string                $logic 查询逻辑    and or xor
-     * @param string|array|\Closure $field 查询字段
-     * @param mixed                 $op 查询表达式
-     * @param mixed                 $condition 查询条件
-     * @param array                 $param 查询参数
-     * @return void
-     */
-    protected function parseWhereExp($logic, $field, $op, $condition, $param = [])
-    {
-        $logic = '$' . strtolower($logic);
-        if ($field instanceof \Closure) {
-            $where = is_string($op) ? [$op, $field] : $field;
-        } elseif (is_null($op) && is_null($condition)) {
-            if (is_array($field)) {
-                if (key($field) !== 0) {
-                    $where = [];
-                    foreach ($field as $key => $val) {
-                        $where[$key] = !is_scalar($val) ? $val : [$key, '=', $val];
-                    }
-                } else {
-                    // 数组批量查询
-                    $where = $field;
-                }
-
-                if (!empty($where)) {
-                    $this->options['where'][$logic] = isset($this->options['where'][$logic]) ? array_merge($this->options['where'][$logic], $where) : $where;
-                }
-
-                return;
-            } elseif ($field && is_string($field)) {
-                // 字符串查询
-                $where = [$field, 'null', ''];
-            }
-        } elseif (is_array($op)) {
-            $where = $param;
-        } elseif (in_array(strtolower($op), ['null', 'notnull', 'not null'])) {
-            // null查询
-            $where = [$field, $op, ''];
-        } elseif (is_null($condition)) {
-            // 字段相等查询
-            $where = [$field, '=', $op];
-        } else {
-            $where = [$field, $op, $condition, isset($param[2]) ? $param[2] : null];
-        }
-
-        if (!empty($where)) {
-            if (isset($this->options['where'][$logic][$field])) {
-                $this->options['where'][$logic][] = $where;
-            } else {
-                $this->options['where'][$logic][$field] = $where;
-            }
-        }
+        return parent::inc($field, $step, strtolower('$' . $op));
     }
 
     /**
@@ -393,7 +242,7 @@ class Mongo extends Query
      * @param string $collection
      * @return $this
      */
-    public function collection($collection)
+    public function collection(string $collection)
     {
         return $this->table($collection);
     }
@@ -404,7 +253,7 @@ class Mongo extends Query
      * @param bool $cursor 是否返回 Cursor 对象
      * @return $this
      */
-    public function fetchCursor($cursor = true)
+    public function fetchCursor(bool $cursor = true)
     {
         $this->options['fetch_cursor'] = $cursor;
         return $this;
@@ -428,7 +277,7 @@ class Mongo extends Query
      * @param bool $awaitData
      * @return $this
      */
-    public function awaitData($awaitData)
+    public function awaitData(bool $awaitData)
     {
         $this->options['awaitData'] = $awaitData;
         return $this;
@@ -440,7 +289,7 @@ class Mongo extends Query
      * @param integer $batchSize
      * @return $this
      */
-    public function batchSize($batchSize)
+    public function batchSize(int $batchSize)
     {
         $this->options['batchSize'] = $batchSize;
         return $this;
@@ -452,7 +301,7 @@ class Mongo extends Query
      * @param bool $exhaust
      * @return $this
      */
-    public function exhaust($exhaust)
+    public function exhaust(bool $exhaust)
     {
         $this->options['exhaust'] = $exhaust;
         return $this;
@@ -464,7 +313,7 @@ class Mongo extends Query
      * @param array $modifiers
      * @return $this
      */
-    public function modifiers($modifiers)
+    public function modifiers(array $modifiers)
     {
         $this->options['modifiers'] = $modifiers;
         return $this;
@@ -476,7 +325,7 @@ class Mongo extends Query
      * @param bool $noCursorTimeout
      * @return $this
      */
-    public function noCursorTimeout($noCursorTimeout)
+    public function noCursorTimeout(bool $noCursorTimeout)
     {
         $this->options['noCursorTimeout'] = $noCursorTimeout;
         return $this;
@@ -488,7 +337,7 @@ class Mongo extends Query
      * @param bool $oplogReplay
      * @return $this
      */
-    public function oplogReplay($oplogReplay)
+    public function oplogReplay(bool $oplogReplay)
     {
         $this->options['oplogReplay'] = $oplogReplay;
         return $this;
@@ -500,7 +349,7 @@ class Mongo extends Query
      * @param bool $partial
      * @return $this
      */
-    public function partial($partial)
+    public function partial(bool $partial)
     {
         $this->options['partial'] = $partial;
         return $this;
@@ -512,7 +361,7 @@ class Mongo extends Query
      * @param string $maxTimeMS
      * @return $this
      */
-    public function maxTimeMS($maxTimeMS)
+    public function maxTimeMS(string $maxTimeMS)
     {
         $this->options['maxTimeMS'] = $maxTimeMS;
         return $this;
@@ -524,7 +373,7 @@ class Mongo extends Query
      * @param array $collation
      * @return $this
      */
-    public function collation($collation)
+    public function collation(array $collation)
     {
         $this->options['collation'] = $collation;
         return $this;
@@ -533,13 +382,27 @@ class Mongo extends Query
     /**
      * 设置返回字段
      * @access public
-     * @param array     $field
-     * @param boolean   $except 是否排除
+     * @param  mixed   $field
+     * @param  boolean $except    是否排除
+     * @param  string  $tableName 数据表名
+     * @param  string  $prefix    字段前缀
+     * @param  string  $alias     别名前缀
      * @return $this
      */
-    public function field($field, $except = false, $tableName = '', $prefix = '', $alias = '')
+    public function field($field, bool $except = false, string $tableName = '', string $prefix = '', string $alias = '')
     {
+        if (empty($field)) {
+            return $this;
+        } elseif ($field instanceof Expression) {
+            $this->options['field'][] = $field;
+            return $this;
+        }
+
         if (is_string($field)) {
+            if (preg_match('/[\<\'\"\(]/', $field)) {
+                return $this->fieldRaw($field);
+            }
+
             $field = array_map('trim', explode(',', $field));
         }
 
@@ -563,7 +426,7 @@ class Mongo extends Query
      * @param integer $skip
      * @return $this
      */
-    public function skip($skip)
+    public function skip(int $skip)
     {
         $this->options['skip'] = $skip;
         return $this;
@@ -575,7 +438,7 @@ class Mongo extends Query
      * @param bool $slaveOk
      * @return $this
      */
-    public function slaveOk($slaveOk)
+    public function slaveOk(bool $slaveOk)
     {
         $this->options['slaveOk'] = $slaveOk;
         return $this;
@@ -588,18 +451,15 @@ class Mongo extends Query
      * @param mixed $length 查询数量
      * @return $this
      */
-    public function limit($offset, $length = null)
+    public function limit(int $offset, int $length = null)
     {
         if (is_null($length)) {
-            if (is_numeric($offset)) {
-                $length = $offset;
-                $offset = 0;
-            } else {
-                list($offset, $length) = explode(',', $offset);
-            }
+            $length = $offset;
+            $offset = 0;
         }
-        $this->options['skip']  = intval($offset);
-        $this->options['limit'] = intval($length);
+
+        $this->options['skip']  = $offset;
+        $this->options['limit'] = $length;
 
         return $this;
     }
@@ -611,7 +471,7 @@ class Mongo extends Query
      * @param string                $order
      * @return $this
      */
-    public function order($field, $order = '')
+    public function order($field, string $order = '')
     {
         if (is_array($field)) {
             $this->options['sort'] = $field;
@@ -627,7 +487,7 @@ class Mongo extends Query
      * @param bool $tailable
      * @return $this
      */
-    public function tailable($tailable)
+    public function tailable(bool $tailable)
     {
         $this->options['tailable'] = $tailable;
         return $this;
@@ -655,26 +515,30 @@ class Mongo extends Query
      */
     public function parsePkWhere($data)
     {
-        $pk = $this->getPk();
+        $pk = $this->getPk($this->options);
 
         if (is_string($pk)) {
-            // 根据主键查询
-            if (is_array($data)) {
-                $where[$pk] = isset($data[$pk]) ? [$pk, '=', $data[$pk]] : [$pk, 'in', $data];
-            } else {
-                $where[$pk] = strpos($data, ',') ? [$pk, 'IN', $data] : [$pk, '=', $data];
+            // 获取数据表
+            if (empty($this->options['table'])) {
+                $this->options['table'] = $this->getTable();
             }
-        }
 
-        if (!empty($where)) {
+            $table = is_array($this->options['table']) ? key($this->options['table']) : $this->options['table'];
+
+            if (!empty($this->options['alias'][$table])) {
+                $alias = $this->options['alias'][$table];
+            }
+
+            $key = isset($alias) ? $alias . '.' . $pk : $pk;
+            // 根据主键查询
+            $where[$pk] = is_array($data) ? [$key, 'in', $data] : [$key, '=', $data];
+
             if (isset($this->options['where']['$and'])) {
                 $this->options['where']['$and'] = array_merge($this->options['where']['$and'], $where);
             } else {
                 $this->options['where']['$and'] = $where;
             }
         }
-
-        return;
     }
 
     /**
@@ -701,34 +565,13 @@ class Mongo extends Query
     }
 
     /**
-     * 查询数据转换为模型对象
-     * @access public
-     * @param array $result     查询数据
-     * @param array $options    查询参数
-     * @param bool  $resultSet  是否为数据集查询
-     * @return void
+     * 获取模型的更新条件
+     * @access protected
+     * @param  array $options 查询参数
      */
-    protected function resultToModel(&$result, $options = [], $resultSet = false)
+    protected function getModelUpdateCondition(array $options)
     {
-
-        $condition = (!$resultSet && isset($options['where']['$and'])) ? $options['where']['$and'] : null;
-        $result    = $this->model->newInstance($result, $condition);
-
-        // 关联查询
-        if (!empty($options['relation'])) {
-            $result->relationQuery($options['relation']);
-        }
-
-        // 预载入查询
-        if (!$resultSet && !empty($options['with'])) {
-            $result->eagerlyResult($result, $options['with']);
-        }
-
-        // 关联统计
-        if (!empty($options['with_count'])) {
-            $result->relationCount($result, $options['with_count']);
-        }
-
+        return isset($options['where']['$and']) ? $options['where']['$and'] : null;
     }
 
     /**

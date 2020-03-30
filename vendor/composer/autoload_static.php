@@ -16,6 +16,11 @@ class ComposerStaticInitf232bb4334a4b844e9d568c85834f7e7
         array (
             'think\\' => 6,
         ),
+        'P' => 
+        array (
+            'Psr\\SimpleCache\\' => 16,
+            'Psr\\Cache\\' => 10,
+        ),
         'F' => 
         array (
             'FastRoute\\' => 10,
@@ -34,6 +39,14 @@ class ComposerStaticInitf232bb4334a4b844e9d568c85834f7e7
         'think\\' => 
         array (
             0 => __DIR__ . '/..' . '/topthink/think-orm/src',
+        ),
+        'Psr\\SimpleCache\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/simple-cache/src',
+        ),
+        'Psr\\Cache\\' => 
+        array (
+            0 => __DIR__ . '/..' . '/psr/cache/src',
         ),
         'FastRoute\\' => 
         array (
